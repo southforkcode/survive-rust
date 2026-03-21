@@ -49,5 +49,5 @@ fn game_not_running(world: &mut GameWorld) {
 
 #[tokio::main]
 async fn main() {
-    GameWorld::run("tests/features/game_loop.feature").await;
+    GameWorld::run("tests/features").await;
 }
