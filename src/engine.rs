@@ -1,5 +1,7 @@
+/// Represents the player's overall state and vitals
 #[derive(Debug)]
 pub struct Player {
+    /// The player's current health points. Player dies if this reaches 0. Max is 100.
     pub health: i32,
 }
 
@@ -13,7 +15,9 @@ impl Player {
 #[derive(Debug)]
 pub struct GameEngine {
     is_running: bool,
+    /// The current day of survival
     pub day_count: u32,
+    /// The player associated with the game
     pub player: Player,
 }
 
@@ -41,10 +45,7 @@ impl GameEngine {
         let output = match cmd.as_str() {
             "help" => "Available commands: help, rest, quit".to_string(),
             "rest" => {
-                self.player.health += 20;
-                if self.player.health > 100 {
-                    self.player.health = 100;
-                }
+                self.player.health = (self.player.health + 20).min(100);
                 self.day_count += 1;
                 "You gained +20 health back.".to_string()
             }
@@ -58,8 +59,11 @@ impl GameEngine {
 
         if self.player.health <= 0 && self.is_running {
             self.is_running = false;
-            let combined = format!("{}\nYou died.", output);
-            return combined.trim_start().to_string();
+            return if output.is_empty() {
+                "You died.".to_string()
+            } else {
+                format!("{}\nYou died.", output)
+            };
         }
 
         output
