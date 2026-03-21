@@ -1,7 +1,7 @@
 # Gemini Agent Guidelines
 
 ## General Workflow
-- **Branching Restrictions:** You must ONLY make changes to `feature/` or `bug/` branches. Note: Modifying `main` is strictly prohibited after the initial setup.
+- **Branching Restrictions:** You must ONLY make changes to `feature/` or `bug/` branches. Note: Modifying `main` is strictly prohibited after the initial setup, **unless explicitly instructed by the user** (the goal is to enforce review cycles, not to prevent merges when asked).
 - **Testing Requirements:** All logic changes MUST be accompanied by tests.
   - Features should be thoroughly covered by one or more BDD tests and/or unit tests.
   - BDD tests are the preferred methodology for feature verification and should be used as much as possible.
