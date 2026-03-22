@@ -1,5 +1,6 @@
 use crate::status::StatusProvider;
 use rand::RngExt;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
 
@@ -13,7 +14,7 @@ pub const GATHER_WATER_COST_MAX: u32 = 2;
 pub const GATHER_FOOD_COST_MIN: u32 = 1;
 pub const GATHER_FOOD_COST_MAX: u32 = 2;
 /// Represents the player's overall state and vitals
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Player {
     /// The player's current health points. Player dies if this reaches 0 or below. Max is 100.
     pub health: i32,
@@ -37,7 +38,7 @@ impl Default for Player {
 }
 
 /// Tracks all gatherable resources carried by the player.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Inventory {
     /// Amount of wood in pounds.
     pub wood: u32, // lb
@@ -71,6 +72,10 @@ pub enum Command {
     Gather(Resource),
     /// Gets status of the environment, player, or camp.
     Status(Option<String>),
+    /// Saves game state to optional file
+    Save(Option<String>),
+    /// Loads game state from file
+    Load(String),
     /// Represents an unrecognized command.
     Unknown,
 }
@@ -100,6 +105,17 @@ impl FromStr for Command {
                     Ok(Command::Status(Some(arg.to_string())))
                 } else {
                     Ok(Command::Status(None))
+                }
+            }
+            "save" => {
+                let arg = parts.next().map(|s| s.to_string());
+                Ok(Command::Save(arg))
+            }
+            "load" => {
+                if let Some(arg) = parts.next() {
+                    Ok(Command::Load(arg.to_string()))
+                } else {
+                    Ok(Command::Unknown)
                 }
             }
             _ => Ok(Command::Unknown),
@@ -135,7 +151,7 @@ impl FromStr for Resource {
 }
 
 /// Time tracking for the game engine
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GameTime {
     pub day_count: u32,
     pub hour: u32,
@@ -176,11 +192,12 @@ impl Default for GameTime {
 }
 
 /// Represents the core state of the game engine
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GameEngine {
     is_running: bool,
     pub time: GameTime,
     pub player: Player,
+    #[serde(skip)]
     status_providers: HashMap<String, Box<dyn StatusProvider>>,
 }
 
@@ -193,6 +210,16 @@ impl GameEngine {
             player: Player::new(),
             status_providers: HashMap::new(),
         }
+    }
+
+    pub fn save_to_file(&self, file_name: &str) -> Result<(), String> {
+        let yaml = serde_yaml::to_string(self).map_err(|e| e.to_string())?;
+        std::fs::write(file_name, yaml).map_err(|e| e.to_string())
+    }
+
+    pub fn load_from_file(file_name: &str) -> Result<Self, String> {
+        let yaml = std::fs::read_to_string(file_name).map_err(|e| e.to_string())?;
+        serde_yaml::from_str(&yaml).map_err(|e| e.to_string())
     }
 
     pub fn register_status_provider(&mut self, provider: Box<dyn StatusProvider>) {
@@ -247,6 +274,22 @@ impl GameEngine {
                 self.is_running = false;
                 "Exiting game...".to_string()
             }
+            Command::Save(file_opt) => {
+                let file_name = file_opt.as_deref().unwrap_or("survive_game.yaml");
+                match self.save_to_file(file_name) {
+                    Ok(_) => format!("Game saved to {}", file_name),
+                    Err(e) => format!("Failed to save game: {}", e),
+                }
+            }
+            Command::Load(file_name) => match GameEngine::load_from_file(&file_name) {
+                Ok(loaded_engine) => {
+                    self.is_running = loaded_engine.is_running;
+                    self.time = loaded_engine.time;
+                    self.player = loaded_engine.player;
+                    format!("Game state restored from {}", file_name)
+                }
+                Err(e) => format!("Failed to load game: {}", e),
+            },
             Command::Gather(resource) => {
                 let random_amount: u32 = 100;
                 match resource {
@@ -462,5 +505,20 @@ mod tests {
         engine2.process_command("rest");
         assert_eq!(engine2.time.day_count, 2);
         assert_eq!(engine2.time.hour, WAKE_UP_HOUR);
+    }
+
+    #[test]
+    fn test_engine_save_load() {
+        let mut engine = GameEngine::new();
+        engine.player.inventory.wood = 500;
+        let file_name = "test_engine_save.yaml";
+        assert!(engine.save_to_file(file_name).is_ok());
+
+        let loaded_engine = GameEngine::load_from_file(file_name).unwrap();
+        assert_eq!(loaded_engine.player.inventory.wood, 500);
+        assert!(loaded_engine.is_running());
+
+        // cleanup
+        let _ = std::fs::remove_file(file_name);
     }
 }

@@ -24,3 +24,7 @@ target
 # Added by cargo
 
 /target
+
+# Game saves
+survive_game.yaml
+tests/data/*.yaml
