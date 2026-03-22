@@ -6,6 +6,12 @@ use std::str::FromStr;
 pub const WAKE_UP_HOUR: u32 = 7;
 pub const SLEEP_HOUR: u32 = 21; // 9 PM
 pub const TIME_COST_STATUS: u32 = 1;
+pub const GATHER_WOOD_COST_MIN: u32 = 1;
+pub const GATHER_WOOD_COST_MAX: u32 = 3;
+pub const GATHER_WATER_COST_MIN: u32 = 1;
+pub const GATHER_WATER_COST_MAX: u32 = 2;
+pub const GATHER_FOOD_COST_MIN: u32 = 1;
+pub const GATHER_FOOD_COST_MAX: u32 = 2;
 /// Represents the player's overall state and vitals
 #[derive(Debug)]
 pub struct Player {
@@ -128,15 +134,52 @@ impl FromStr for Resource {
     }
 }
 
+/// Time tracking for the game engine
+#[derive(Debug)]
+pub struct GameTime {
+    pub day_count: u32,
+    pub hour: u32,
+}
+
+impl GameTime {
+    pub fn new() -> Self {
+        Self {
+            day_count: 1,
+            hour: WAKE_UP_HOUR,
+        }
+    }
+
+    pub fn next_turn(&mut self) {
+        self.day_count += 1;
+        self.hour = WAKE_UP_HOUR;
+    }
+
+    pub fn advance_time(&mut self, hours: u32) {
+        self.hour += hours;
+        while self.hour >= 24 {
+            self.day_count += 1;
+            self.hour -= 24;
+        }
+        if self.hour >= SLEEP_HOUR || self.hour < WAKE_UP_HOUR {
+            if self.hour >= SLEEP_HOUR {
+                self.day_count += 1;
+            }
+            self.hour = WAKE_UP_HOUR;
+        }
+    }
+}
+
+impl Default for GameTime {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Represents the core state of the game engine
 #[derive(Debug)]
 pub struct GameEngine {
     is_running: bool,
-    /// The current day of survival
-    pub day_count: u32,
-    /// The current hour of the day
-    pub hour: u32,
-    /// The player associated with the game
+    pub time: GameTime,
     pub player: Player,
     status_providers: HashMap<String, Box<dyn StatusProvider>>,
 }
@@ -146,8 +189,7 @@ impl GameEngine {
     pub fn new() -> Self {
         Self {
             is_running: true,
-            day_count: 1,
-            hour: WAKE_UP_HOUR,
+            time: GameTime::new(),
             player: Player::new(),
             status_providers: HashMap::new(),
         }
@@ -161,19 +203,6 @@ impl GameEngine {
     /// Checks if the game is still running
     pub fn is_running(&self) -> bool {
         self.is_running
-    }
-
-    fn next_turn(&mut self) {
-        self.day_count += 1;
-        self.hour = WAKE_UP_HOUR;
-    }
-
-    /// Advances time by the specified number of hours. If time exceeds SLEEP_HOUR, start a new day.
-    pub fn advance_time(&mut self, hours: u32) {
-        self.hour += hours;
-        if self.hour >= SLEEP_HOUR {
-            self.next_turn();
-        }
     }
 
     /// Processes a single string command from the user and updates state.
@@ -190,7 +219,7 @@ impl GameEngine {
             }
             Command::Rest => {
                 self.player.health = (self.player.health + 20).min(100);
-                self.next_turn();
+                self.time.next_turn();
                 "You gained +20 health back.".to_string()
             }
             Command::Status(target) => {
@@ -222,7 +251,8 @@ impl GameEngine {
                 let random_amount: u32 = 100;
                 match resource {
                     Resource::Wood => {
-                        time_cost = rand::rng().random_range(1..=3);
+                        time_cost =
+                            rand::rng().random_range(GATHER_WOOD_COST_MIN..=GATHER_WOOD_COST_MAX);
                         self.player.inventory.wood += random_amount;
                         format!(
                             "Gathered {} lbs. of wood! (Took {} hours)",
@@ -230,7 +260,8 @@ impl GameEngine {
                         )
                     }
                     Resource::Water => {
-                        time_cost = rand::rng().random_range(1..=2);
+                        time_cost =
+                            rand::rng().random_range(GATHER_WATER_COST_MIN..=GATHER_WATER_COST_MAX);
                         self.player.inventory.water += random_amount;
                         format!(
                             "Gathered {} liters of water! (Took {} hours)",
@@ -238,7 +269,8 @@ impl GameEngine {
                         )
                     }
                     Resource::Food => {
-                        time_cost = rand::rng().random_range(1..=2);
+                        time_cost =
+                            rand::rng().random_range(GATHER_FOOD_COST_MIN..=GATHER_FOOD_COST_MAX);
                         self.player.inventory.food += random_amount;
                         format!(
                             "Gathered {} lbs. of food! (Took {} hours)",
@@ -252,7 +284,7 @@ impl GameEngine {
         };
 
         if time_cost > 0 {
-            self.advance_time(time_cost);
+            self.time.advance_time(time_cost);
         }
 
         if self.player.health <= 0 && self.is_running {
@@ -307,7 +339,7 @@ mod tests {
         let output = engine.process_command("rest");
         assert_eq!(output, "You gained +20 health back.");
         assert_eq!(engine.player.health, 70);
-        assert_eq!(engine.day_count, 2);
+        assert_eq!(engine.time.day_count, 2);
     }
 
     #[test]
@@ -401,34 +433,34 @@ mod tests {
     #[test]
     fn test_engine_time_advance() {
         let mut engine = GameEngine::new();
-        assert_eq!(engine.hour, WAKE_UP_HOUR);
-        engine.advance_time(10);
-        assert_eq!(engine.hour, 17);
-        assert_eq!(engine.day_count, 1);
+        assert_eq!(engine.time.hour, WAKE_UP_HOUR);
+        engine.time.advance_time(10);
+        assert_eq!(engine.time.hour, 17);
+        assert_eq!(engine.time.day_count, 1);
 
         // Push past sleep hour (21)
-        engine.advance_time(5); // 17 + 5 = 22
-        assert_eq!(engine.hour, WAKE_UP_HOUR);
-        assert_eq!(engine.day_count, 2);
+        engine.time.advance_time(5); // 17 + 5 = 22
+        assert_eq!(engine.time.hour, WAKE_UP_HOUR);
+        assert_eq!(engine.time.day_count, 2);
     }
 
     #[test]
     fn test_engine_time_costs() {
         let mut engine = GameEngine::new();
-        let initial_hour = engine.hour;
+        let initial_hour = engine.time.hour;
 
         // Status command costs 1 hour
         engine.process_command("status");
-        assert_eq!(engine.hour, initial_hour + 1);
+        assert_eq!(engine.time.hour, initial_hour + 1);
 
         // Gather commands have variable costs, but always at least 1
         let mut engine2 = GameEngine::new();
         engine2.process_command("gather wood");
-        assert!(engine2.hour >= WAKE_UP_HOUR + 1 && engine2.hour <= WAKE_UP_HOUR + 3);
+        assert!(engine2.time.hour >= WAKE_UP_HOUR + 1 && engine2.time.hour <= WAKE_UP_HOUR + 3);
 
         // Rest command jumps to next day WAKE_UP_HOUR
         engine2.process_command("rest");
-        assert_eq!(engine2.day_count, 2);
-        assert_eq!(engine2.hour, WAKE_UP_HOUR);
+        assert_eq!(engine2.time.day_count, 2);
+        assert_eq!(engine2.time.hour, WAKE_UP_HOUR);
     }
 }

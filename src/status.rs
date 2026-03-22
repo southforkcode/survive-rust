@@ -16,9 +16,15 @@ impl StatusProvider for WeatherStatusProvider {
         PROVIDER_WEATHER
     }
     fn status(&self, engine: &GameEngine) -> String {
+        let hour = engine.time.hour;
+        let weather_desc = if !(6..18).contains(&hour) {
+            "The stars are out. It's cool outside. The plants look dark."
+        } else {
+            "The sun is high in the sky. It's quite warm outside. The plants look parched."
+        };
         format!(
-            "Day {}, {:02}:00. The sun is high in the sky. It's quite warm outside. The plants look parched. This feels like summer to you.",
-            engine.day_count, engine.hour
+            "Day {}, {:02}:00. {} This feels like summer to you.",
+            engine.time.day_count, hour, weather_desc
         )
     }
 }

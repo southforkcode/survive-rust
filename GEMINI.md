@@ -1,6 +1,7 @@
 # Gemini Agent Guidelines
 
 ## General Workflow
+- **Designing** When you are asked to design something (given an GH issue). You must not make code changes. You are only meant to post comments to the ticket referenced in the request.
 - **Branching Restrictions:** You must ONLY make changes to `feature/` or `bug/` branches. Note: Modifying `main` is strictly prohibited after the initial setup, **unless explicitly instructed by the user** (the goal is to enforce review cycles, not to prevent merges when asked).
 - **Testing Requirements:** Ensure code is covered by tests.
   - Prioritize BDD style tests when appropriate.
