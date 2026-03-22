@@ -1,5 +1,13 @@
 # Survival
 
+## Setup
+
+To set up the required git hooks for this project, run the following command after cloning the repository:
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ## Game Overview
 
 - Game loop is day-by-day, where the player must make decisions to survive.
