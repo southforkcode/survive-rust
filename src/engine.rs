@@ -3,28 +3,40 @@ use std::str::FromStr;
 /// Represents the player's overall state and vitals
 #[derive(Debug)]
 pub struct Player {
-    /// The player's current health points. Player dies if this reaches 0. Max is 100.
-    health: u32,
+    /// The player's current health points. Player dies if this reaches 0 or below. Max is 100.
+    health: i32,
     inventory: Inventory,
 }
 
 impl Player {
+    /// Creates a new player with full health and an empty inventory.
     pub fn new() -> Self {
-        Self { 
-            health: 100, 
+        Self {
+            health: 100,
             inventory: Inventory::new(),
         }
     }
 }
 
+impl Default for Player {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Tracks all gatherable resources carried by the player.
 #[derive(Debug, Default)]
 pub struct Inventory {
+    /// Amount of wood in pounds.
     pub wood: u32, // lb
+    /// Amount of water in liters.
     pub water: u32, // liters
+    /// Amount of food in pounds.
     pub food: u32, // lb
 }
 
 impl Inventory {
+    /// Creates a new empty inventory.
     pub fn new() -> Self {
         Self {
             wood: 0,
@@ -34,13 +46,18 @@ impl Inventory {
     }
 }
 
-
 // Command variants
+/// Parsed command values accepted by the game engine.
 pub enum Command {
+    /// Displays the list of available commands.
     Help,
+    /// Advances one turn and restores player health.
     Rest,
+    /// Stops the game loop.
     Quit,
+    /// Gathers the requested resource.
     Gather(Resource),
+    /// Represents an unrecognized command.
     Unknown,
 }
 
@@ -48,35 +65,39 @@ impl FromStr for Command {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut parts = s.trim().split_whitespace();
+        let mut parts = s.split_whitespace();
         let command: &str = parts.next().unwrap_or("");
         let args: Vec<&str> = parts.collect();
 
         match command {
             "help" => Ok(Command::Help),
             "rest" => Ok(Command::Rest),
-            "quit" => Ok(Command::Quit),
+            "quit" | "exit" => Ok(Command::Quit),
             "gather" => {
-                if args.len() > 0 {
-                    Ok(Command::Gather(Resource::from_str(args[0]).unwrap_or_else(|_| Resource::Unknown)))
+                if !args.is_empty() {
+                    Ok(Command::Gather(
+                        Resource::from_str(args[0]).unwrap_or(Resource::Unknown),
+                    ))
                 } else {
                     Ok(Command::Gather(Resource::Unknown))
                 }
-            },
-            _ => {
-                Ok(Command::Unknown)
             }
+            _ => Ok(Command::Unknown),
         }
     }
 }
 
 // Resource variants
-#[derive(Debug, Default)]
+/// Supported resource kinds for gather actions.
+#[derive(Debug)]
 pub enum Resource {
+    /// Wood resource.
     Wood,
+    /// Water resource.
     Water,
+    /// Food resource.
     Food,
-    #[default]
+    /// Unrecognized resource input.
     Unknown,
 }
 
@@ -84,16 +105,14 @@ impl FromStr for Resource {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s.to_lowercase().as_str() {
-            "wood" => Ok(Resource::Wood),
-            "water" => Ok(Resource::Water),
-            "food" => Ok(Resource::Food),
-            _ => Ok(Resource::Unknown)
+        match s {
+            s if s.eq_ignore_ascii_case("wood") => Ok(Resource::Wood),
+            s if s.eq_ignore_ascii_case("water") => Ok(Resource::Water),
+            s if s.eq_ignore_ascii_case("food") => Ok(Resource::Food),
+            _ => Ok(Resource::Unknown),
         }
     }
 }
-
-
 
 /// Represents the core state of the game engine
 #[derive(Debug)]
@@ -120,8 +139,8 @@ impl GameEngine {
         self.is_running
     }
 
-    fn next_turn(&mut self) -> () {
-        self.day_count += 1;
+    fn next_turn(&mut self) {
+        self.day_count += 1
     }
 
     /// Processes a single string command from the user and updates state.
@@ -129,9 +148,9 @@ impl GameEngine {
     /// # Arguments
     /// * `command` - The text command from the terminal
     pub fn process_command(&mut self, raw: &str) -> String {
-        let cmd: Command = Command::from_str(raw).unwrap_or_else(|_| Command::Unknown);
+        let cmd: Command = Command::from_str(raw).unwrap_or(Command::Unknown);
         let output = match cmd {
-            Command::Help => "Available commands: help, rest, quit, rest, gather".to_string(),
+            Command::Help => "Available commands: help, quit, exit, rest, gather".to_string(),
             Command::Rest => {
                 self.player.health = (self.player.health + 20).min(100);
                 self.next_turn();
@@ -154,16 +173,12 @@ impl GameEngine {
                     }
                     Resource::Food => {
                         self.player.inventory.food += random_amount;
-                        format!("Gathered {random_amount} lbs. of water!")
+                        format!("Gathered {random_amount} lbs. of food!")
                     }
-                    Resource::Unknown | _ => {
-                        format!("Couldn't gather unknown resource!")
-                    }
+                    _ => "Couldn't gather unknown resource!".to_string(),
                 }
-
-                
             }
-            Command::Unknown | _ => "Unknown command!".to_string()
+            _ => "Unknown command!".to_string(),
         };
 
         if self.player.health <= 0 && self.is_running {
@@ -176,6 +191,12 @@ impl GameEngine {
         }
 
         output
+    }
+}
+
+impl Default for GameEngine {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -221,6 +242,49 @@ mod tests {
         engine.player.health = 90;
         engine.process_command("rest");
         assert_eq!(engine.player.health, 100);
+    }
+
+    #[test]
+    fn test_engine_gather_command_valid_resources() {
+        let mut engine: GameEngine = GameEngine::new();
+
+        for resource in ["wood", "water", "food"] {
+            let command: String = "gather ".to_string() + resource;
+            let output = engine.process_command(&command);
+            assert!(!output.contains("Couldn't"));
+            match resource {
+                "wood" => {
+                    assert_eq!(engine.player.inventory.wood, 100);
+                    assert_eq!(engine.player.inventory.water, 0);
+                    assert_eq!(engine.player.inventory.food, 0)
+                }
+                "water" => {
+                    assert_eq!(engine.player.inventory.wood, 100);
+                    assert_eq!(engine.player.inventory.water, 100);
+                    assert_eq!(engine.player.inventory.food, 0)
+                }
+                "food" => {
+                    assert_eq!(engine.player.inventory.wood, 100);
+                    assert_eq!(engine.player.inventory.water, 100);
+                    assert_eq!(engine.player.inventory.food, 100)
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn test_engine_gather_command_invalid_resources() {
+        let mut engine = GameEngine::new();
+        let invalid_inputs = ["", " ", "something"];
+        for input in invalid_inputs {
+            let command: String = "gather ".to_string() + input;
+            let output = engine.process_command(&command);
+            assert!(output.contains("Couldn't gather unknown resource!"));
+            assert_eq!(engine.player.inventory.wood, 0);
+            assert_eq!(engine.player.inventory.water, 0);
+            assert_eq!(engine.player.inventory.food, 0);
+        }
     }
 
     #[test]

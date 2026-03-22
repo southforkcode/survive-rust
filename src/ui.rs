@@ -3,6 +3,12 @@ use std::io::{self, Write};
 /// Manages interaction with the terminal UI
 pub struct TerminalUi;
 
+impl Default for TerminalUi {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TerminalUi {
     /// Constructs a new TerminalUi manager
     pub fn new() -> Self {
