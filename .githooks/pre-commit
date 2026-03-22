@@ -1,0 +1,9 @@
+#!/bin/sh
+
+branch="$(git rev-parse --abbrev-ref HEAD)"
+
+if [ "$branch" = "main" ]; then
+  echo "Error: Committing directly to the 'main' branch is prohibited."
+  echo "Please create a new branch or checkout an existing feature/bug branch."
+  exit 1
+fi
