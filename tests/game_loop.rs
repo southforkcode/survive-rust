@@ -9,7 +9,12 @@ pub struct GameWorld {
 
 #[given("the game is running")]
 fn game_is_running(world: &mut GameWorld) {
-    world.engine = Some(GameEngine::new());
+    use survive_rust::status::{CampStatusProvider, PlayerStatusProvider, WeatherStatusProvider};
+    let mut engine = GameEngine::new();
+    engine.register_status_provider(Box::new(WeatherStatusProvider));
+    engine.register_status_provider(Box::new(CampStatusProvider));
+    engine.register_status_provider(Box::new(PlayerStatusProvider));
+    world.engine = Some(engine);
 }
 
 #[when(expr = "I type the command {string}")]

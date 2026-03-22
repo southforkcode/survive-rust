@@ -2,10 +2,10 @@
 
 ## General Workflow
 - **Branching Restrictions:** You must ONLY make changes to `feature/` or `bug/` branches. Note: Modifying `main` is strictly prohibited after the initial setup, **unless explicitly instructed by the user** (the goal is to enforce review cycles, not to prevent merges when asked).
-- **Testing Requirements:** All logic changes MUST be accompanied by tests.
-  - Features should be thoroughly covered by one or more BDD tests and/or unit tests.
-  - BDD tests are the preferred methodology for feature verification and should be used as much as possible.
-  - UX tests must exercise the application in the terminal, as the terminal serves as our primary UI.
+- **Testing Requirements:** Ensure code is covered by tests.
+  - Prioritize BDD style tests when appropriate.
+  - Use Unit Tests when appropriate.
+  - UI tests should cover user interaction.
 
 ## Rust Best Practices
 When writing, modifying, or reviewing Rust code, enforce the following standard best practices:
