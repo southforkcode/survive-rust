@@ -67,16 +67,15 @@ impl FromStr for Command {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split_whitespace();
         let command: &str = parts.next().unwrap_or("");
-        let args: Vec<&str> = parts.collect();
 
         match command {
             "help" => Ok(Command::Help),
             "rest" => Ok(Command::Rest),
             "quit" | "exit" => Ok(Command::Quit),
             "gather" => {
-                if !args.is_empty() {
+                if let Some(arg) = parts.next() {
                     Ok(Command::Gather(
-                        args.get(0).and_then(|s| Resource::from_str(s).ok()).unwrap_or(Resource::Unknown),
+                        Resource::from_str(arg).ok().unwrap_or(Resource::Unknown),
                     ))
                 } else {
                     Ok(Command::Gather(Resource::Unknown))
@@ -148,7 +147,7 @@ impl GameEngine {
     /// # Arguments
     /// * `command` - The text command from the terminal
     pub fn process_command(&mut self, raw: &str) -> String {
-        let cmd: Command = Command::from_str(raw).unwrap_or(Command::Unknown);
+        let cmd: Command = Command::from_str(raw).ok().unwrap_or(Command::Unknown);
         let output = match cmd {
             Command::Help => "Available commands: help, quit, exit, rest, gather".to_string(),
             Command::Rest => {
