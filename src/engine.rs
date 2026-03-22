@@ -57,6 +57,8 @@ pub enum Command {
     Quit,
     /// Gathers the requested resource.
     Gather(Resource),
+    /// Gets status of the environment, player, or camp.
+    Status(Option<String>),
     /// Represents an unrecognized command.
     Unknown,
 }
@@ -79,6 +81,13 @@ impl FromStr for Command {
                     ))
                 } else {
                     Ok(Command::Gather(Resource::Unknown))
+                }
+            }
+            "status" => {
+                if let Some(arg) = parts.next() {
+                    Ok(Command::Status(Some(arg.to_string())))
+                } else {
+                    Ok(Command::Status(None))
                 }
             }
             _ => Ok(Command::Unknown),
@@ -113,6 +122,56 @@ impl FromStr for Resource {
     }
 }
 
+pub trait StatusProvider: std::fmt::Debug {
+    fn name(&self) -> &'static str;
+    fn status(&self, player: &Player) -> String;
+}
+
+#[derive(Debug)]
+pub struct WeatherStatusProvider;
+impl StatusProvider for WeatherStatusProvider {
+    fn name(&self) -> &'static str { "weather" }
+    fn status(&self, _player: &Player) -> String {
+        "The sun is high in the sky. It's quite warm outside. The plants look parched. This feels like summer to you.".to_string()
+    }
+}
+
+#[derive(Debug)]
+pub struct CampStatusProvider;
+impl StatusProvider for CampStatusProvider {
+    fn name(&self) -> &'static str { "camp" }
+    fn status(&self, player: &Player) -> String {
+        let wood = match player.inventory.wood {
+            0 => "No firewood",
+            1..=49 => "A little firewood",
+            50..=150 => "Some firewood",
+            _ => "Lots of firewood",
+        };
+        let water = match player.inventory.water {
+            0 => "No water",
+            1..=49 => "A little water",
+            50..=150 => "Some water",
+            _ => "Lots of water",
+        };
+        format!("In the camp you see:\n ~ {}\n ~ {}\n ~ A sleeping spot", wood, water)
+    }
+}
+
+#[derive(Debug)]
+pub struct PlayerStatusProvider;
+impl StatusProvider for PlayerStatusProvider {
+    fn name(&self) -> &'static str { "player" }
+    fn status(&self, player: &Player) -> String {
+        if player.health >= 90 {
+            "You feel rested and healthy.".to_string()
+        } else if player.health >= 50 {
+            "You feel okay, but could use some rest.".to_string()
+        } else {
+            "You feel weak and injured.".to_string()
+        }
+    }
+}
+
 /// Represents the core state of the game engine
 #[derive(Debug)]
 pub struct GameEngine {
@@ -121,16 +180,26 @@ pub struct GameEngine {
     pub day_count: u32,
     /// The player associated with the game
     pub player: Player,
+    status_providers: Vec<Box<dyn StatusProvider>>,
 }
 
 impl GameEngine {
     /// Creates a new, initialized GameEngine
     pub fn new() -> Self {
-        Self {
+        let mut engine = Self {
             is_running: true,
             day_count: 1,
             player: Player::new(),
-        }
+            status_providers: Vec::new(),
+        };
+        engine.register_status_provider(Box::new(WeatherStatusProvider));
+        engine.register_status_provider(Box::new(CampStatusProvider));
+        engine.register_status_provider(Box::new(PlayerStatusProvider));
+        engine
+    }
+
+    pub fn register_status_provider(&mut self, provider: Box<dyn StatusProvider>) {
+        self.status_providers.push(provider);
     }
 
     /// Checks if the game is still running
@@ -149,12 +218,25 @@ impl GameEngine {
     pub fn process_command(&mut self, raw: &str) -> String {
         let cmd: Command = Command::from_str(raw).ok().unwrap_or(Command::Unknown);
         let output = match cmd {
-            Command::Help => "Available commands: help, quit, exit, rest, gather".to_string(),
+            Command::Help => "Available commands: help, quit, exit, rest, gather, status".to_string(),
             Command::Rest => {
                 self.player.health = (self.player.health + 20).min(100);
                 self.next_turn();
                 "You gained +20 health back.".to_string()
             }
+            Command::Status(target) => match target {
+                Some(name) => {
+                    if let Some(provider) = self.status_providers.iter().find(|p| p.name().eq_ignore_ascii_case(&name)) {
+                        provider.status(&self.player)
+                    } else {
+                        "Cannot get status of unknown target.".to_string()
+                    }
+                }
+                None => {
+                    let statuses: Vec<String> = self.status_providers.iter().map(|p| p.status(&self.player)).collect();
+                    statuses.join("\n\n")
+                }
+            },
             Command::Quit => {
                 self.is_running = false;
                 "Exiting game...".to_string()
@@ -241,6 +323,29 @@ mod tests {
         engine.player.health = 90;
         engine.process_command("rest");
         assert_eq!(engine.player.health, 100);
+    }
+
+    #[test]
+    fn test_engine_status_command() {
+        let mut engine = GameEngine::new();
+        let output = engine.process_command("status");
+        assert!(output.contains("The sun is high in the sky."));
+        assert!(output.contains("A sleeping spot"));
+        assert!(output.contains("rested and healthy"));
+        
+        let weather_output = engine.process_command("status weather");
+        assert!(weather_output.contains("The sun is high in the sky."));
+        
+        let camp_output = engine.process_command("status camp");
+        assert!(camp_output.contains("A sleeping spot"));
+
+        engine.process_command("gather wood");
+        let item_output = engine.process_command("status camp");
+        assert!(item_output.contains("Some firewood"));
+
+        engine.player.health = 40;
+        let p_status = engine.process_command("status player");
+        assert!(p_status.contains("weak and injured"));
     }
 
     #[test]
