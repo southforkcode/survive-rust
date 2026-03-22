@@ -1,6 +1,6 @@
 use survive_rust::engine::GameEngine;
-use survive_rust::ui::TerminalUi;
 use survive_rust::status::{CampStatusProvider, PlayerStatusProvider, WeatherStatusProvider};
+use survive_rust::ui::TerminalUi;
 
 fn main() {
     let mut game = GameEngine::new();
