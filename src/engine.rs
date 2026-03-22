@@ -1,4 +1,6 @@
 use std::str::FromStr;
+use std::collections::HashMap;
+use crate::status::StatusProvider;
 
 /// Represents the player's overall state and vitals
 #[derive(Debug)]
@@ -122,55 +124,6 @@ impl FromStr for Resource {
     }
 }
 
-pub trait StatusProvider: std::fmt::Debug {
-    fn name(&self) -> &'static str;
-    fn status(&self, player: &Player) -> String;
-}
-
-#[derive(Debug)]
-pub struct WeatherStatusProvider;
-impl StatusProvider for WeatherStatusProvider {
-    fn name(&self) -> &'static str { "weather" }
-    fn status(&self, _player: &Player) -> String {
-        "The sun is high in the sky. It's quite warm outside. The plants look parched. This feels like summer to you.".to_string()
-    }
-}
-
-#[derive(Debug)]
-pub struct CampStatusProvider;
-impl StatusProvider for CampStatusProvider {
-    fn name(&self) -> &'static str { "camp" }
-    fn status(&self, player: &Player) -> String {
-        let wood = match player.inventory.wood {
-            0 => "No firewood",
-            1..=49 => "A little firewood",
-            50..=150 => "Some firewood",
-            _ => "Lots of firewood",
-        };
-        let water = match player.inventory.water {
-            0 => "No water",
-            1..=49 => "A little water",
-            50..=150 => "Some water",
-            _ => "Lots of water",
-        };
-        format!("In the camp you see:\n ~ {}\n ~ {}\n ~ A sleeping spot", wood, water)
-    }
-}
-
-#[derive(Debug)]
-pub struct PlayerStatusProvider;
-impl StatusProvider for PlayerStatusProvider {
-    fn name(&self) -> &'static str { "player" }
-    fn status(&self, player: &Player) -> String {
-        if player.health >= 90 {
-            "You feel rested and healthy.".to_string()
-        } else if player.health >= 50 {
-            "You feel okay, but could use some rest.".to_string()
-        } else {
-            "You feel weak and injured.".to_string()
-        }
-    }
-}
 
 /// Represents the core state of the game engine
 #[derive(Debug)]
@@ -180,26 +133,22 @@ pub struct GameEngine {
     pub day_count: u32,
     /// The player associated with the game
     pub player: Player,
-    status_providers: Vec<Box<dyn StatusProvider>>,
+    status_providers: HashMap<String, Box<dyn StatusProvider>>,
 }
 
 impl GameEngine {
     /// Creates a new, initialized GameEngine
     pub fn new() -> Self {
-        let mut engine = Self {
+        Self {
             is_running: true,
             day_count: 1,
             player: Player::new(),
-            status_providers: Vec::new(),
-        };
-        engine.register_status_provider(Box::new(WeatherStatusProvider));
-        engine.register_status_provider(Box::new(CampStatusProvider));
-        engine.register_status_provider(Box::new(PlayerStatusProvider));
-        engine
+            status_providers: HashMap::new(),
+        }
     }
 
     pub fn register_status_provider(&mut self, provider: Box<dyn StatusProvider>) {
-        self.status_providers.push(provider);
+        self.status_providers.insert(provider.name().to_string().to_lowercase(), provider);
     }
 
     /// Checks if the game is still running
@@ -226,14 +175,15 @@ impl GameEngine {
             }
             Command::Status(target) => match target {
                 Some(name) => {
-                    if let Some(provider) = self.status_providers.iter().find(|p| p.name().eq_ignore_ascii_case(&name)) {
+                    if let Some(provider) = self.status_providers.get(&name.to_lowercase()) {
                         provider.status(&self.player)
                     } else {
                         "Cannot get status of unknown target.".to_string()
                     }
                 }
                 None => {
-                    let statuses: Vec<String> = self.status_providers.iter().map(|p| p.status(&self.player)).collect();
+                    let mut statuses: Vec<String> = self.status_providers.values().map(|p| p.status(&self.player)).collect();
+                    statuses.sort(); // Optional: keeps output deterministic
                     statuses.join("\n\n")
                 }
             },
@@ -327,7 +277,12 @@ mod tests {
 
     #[test]
     fn test_engine_status_command() {
+        use crate::status::{CampStatusProvider, PlayerStatusProvider, WeatherStatusProvider};
         let mut engine = GameEngine::new();
+        engine.register_status_provider(Box::new(WeatherStatusProvider));
+        engine.register_status_provider(Box::new(CampStatusProvider));
+        engine.register_status_provider(Box::new(PlayerStatusProvider));
+
         let output = engine.process_command("status");
         assert!(output.contains("The sun is high in the sky."));
         assert!(output.contains("A sleeping spot"));
