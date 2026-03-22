@@ -213,6 +213,13 @@ impl GameEngine {
     }
 
     pub fn save_to_file(&self, file_name: &str) -> Result<(), String> {
+        if let Some(parent) = std::path::Path::new(file_name)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+        {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create directory: {}", e))?;
+        }
         let yaml = serde_yaml::to_string(self).map_err(|e| e.to_string())?;
         std::fs::write(file_name, yaml).map_err(|e| e.to_string())
     }
