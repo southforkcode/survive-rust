@@ -4,8 +4,8 @@ use std::str::FromStr;
 #[derive(Debug)]
 pub struct Player {
     /// The player's current health points. Player dies if this reaches 0 or below. Max is 100.
-    health: i32,
-    inventory: Inventory,
+    pub health: i32,
+    pub inventory: Inventory,
 }
 
 impl Player {
@@ -76,7 +76,7 @@ impl FromStr for Command {
             "gather" => {
                 if !args.is_empty() {
                     Ok(Command::Gather(
-                        Resource::from_str(args[0]).unwrap_or(Resource::Unknown),
+                        args.get(0).and_then(|s| Resource::from_str(s).ok()).unwrap_or(Resource::Unknown),
                     ))
                 } else {
                     Ok(Command::Gather(Resource::Unknown))
