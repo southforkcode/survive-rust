@@ -1,15 +1,99 @@
+use std::str::FromStr;
+
 /// Represents the player's overall state and vitals
 #[derive(Debug)]
 pub struct Player {
     /// The player's current health points. Player dies if this reaches 0. Max is 100.
-    pub health: i32,
+    health: u32,
+    inventory: Inventory,
 }
 
 impl Player {
     pub fn new() -> Self {
-        Self { health: 100 }
+        Self { 
+            health: 100, 
+            inventory: Inventory::new(),
+        }
     }
 }
+
+#[derive(Debug, Default)]
+pub struct Inventory {
+    pub wood: u32, // lb
+    pub water: u32, // liters
+    pub food: u32, // lb
+}
+
+impl Inventory {
+    pub fn new() -> Self {
+        Self {
+            wood: 0,
+            water: 0,
+            food: 0,
+        }
+    }
+}
+
+
+// Command variants
+pub enum Command {
+    Help,
+    Rest,
+    Quit,
+    Gather(Resource),
+    Unknown,
+}
+
+impl FromStr for Command {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut parts = s.trim().split_whitespace();
+        let command: &str = parts.next().unwrap_or("");
+        let args: Vec<&str> = parts.collect();
+
+        match command {
+            "help" => Ok(Command::Help),
+            "rest" => Ok(Command::Rest),
+            "quit" => Ok(Command::Quit),
+            "gather" => {
+                if args.len() > 0 {
+                    Ok(Command::Gather(Resource::from_str(args[0]).unwrap_or_else(|_| Resource::Unknown)))
+                } else {
+                    Ok(Command::Gather(Resource::Unknown))
+                }
+            },
+            _ => {
+                Ok(Command::Unknown)
+            }
+        }
+    }
+}
+
+// Resource variants
+#[derive(Debug, Default)]
+pub enum Resource {
+    Wood,
+    Water,
+    Food,
+    #[default]
+    Unknown,
+}
+
+impl FromStr for Resource {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "wood" => Ok(Resource::Wood),
+            "water" => Ok(Resource::Water),
+            "food" => Ok(Resource::Food),
+            _ => Ok(Resource::Unknown)
+        }
+    }
+}
+
+
 
 /// Represents the core state of the game engine
 #[derive(Debug)]
@@ -36,25 +120,50 @@ impl GameEngine {
         self.is_running
     }
 
+    fn next_turn(&mut self) -> () {
+        self.day_count += 1;
+    }
+
     /// Processes a single string command from the user and updates state.
     ///
     /// # Arguments
     /// * `command` - The text command from the terminal
-    pub fn process_command(&mut self, command: &str) -> String {
-        let cmd = command.trim().to_lowercase();
-        let output = match cmd.as_str() {
-            "help" => "Available commands: help, rest, quit".to_string(),
-            "rest" => {
+    pub fn process_command(&mut self, raw: &str) -> String {
+        let cmd: Command = Command::from_str(raw).unwrap_or_else(|_| Command::Unknown);
+        let output = match cmd {
+            Command::Help => "Available commands: help, rest, quit, rest, gather".to_string(),
+            Command::Rest => {
                 self.player.health = (self.player.health + 20).min(100);
-                self.day_count += 1;
+                self.next_turn();
                 "You gained +20 health back.".to_string()
             }
-            "quit" | "exit" => {
+            Command::Quit => {
                 self.is_running = false;
                 "Exiting game...".to_string()
             }
-            "" => "".to_string(),
-            _ => format!("Unknown command: {}", cmd),
+            Command::Gather(resource) => {
+                let random_amount: u32 = 100;
+                match resource {
+                    Resource::Wood => {
+                        self.player.inventory.wood += random_amount;
+                        format!("Gathered {random_amount} lbs. of wood!")
+                    }
+                    Resource::Water => {
+                        self.player.inventory.water += random_amount;
+                        format!("Gathered {random_amount} liters of water!")
+                    }
+                    Resource::Food => {
+                        self.player.inventory.food += random_amount;
+                        format!("Gathered {random_amount} lbs. of water!")
+                    }
+                    Resource::Unknown | _ => {
+                        format!("Couldn't gather unknown resource!")
+                    }
+                }
+
+                
+            }
+            Command::Unknown | _ => "Unknown command!".to_string()
         };
 
         if self.player.health <= 0 && self.is_running {
