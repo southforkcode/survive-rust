@@ -3,7 +3,19 @@ use survive_rust::status::{CampStatusProvider, PlayerStatusProvider, WeatherStat
 use survive_rust::ui::TerminalUi;
 
 fn main() {
-    let mut game = GameEngine::new();
+    let mut args = std::env::args().skip(1);
+    let mut game = if let (Some(arg), Some(file)) = (args.next(), args.next()) {
+        if arg == "-load" || arg == "--load" {
+            GameEngine::load_from_file(&file).unwrap_or_else(|e| {
+                println!("Failed to load game: {}. Starting a new game.", e);
+                GameEngine::new()
+            })
+        } else {
+            GameEngine::new()
+        }
+    } else {
+        GameEngine::new()
+    };
     game.register_status_provider(Box::new(WeatherStatusProvider));
     game.register_status_provider(Box::new(CampStatusProvider));
     game.register_status_provider(Box::new(PlayerStatusProvider));
