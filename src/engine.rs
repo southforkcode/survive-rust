@@ -76,6 +76,8 @@ pub enum Command {
     Save(Option<String>),
     /// Loads game state from file
     Load(String),
+    // Outputs the player's current inventory 
+    Inventory,
     /// Represents an unrecognized command.
     Unknown,
 }
@@ -117,6 +119,9 @@ impl FromStr for Command {
                 } else {
                     Ok(Command::Unknown)
                 }
+            },
+            "inventory" | "inv" => {
+                Ok(Command::Inventory)
             }
             _ => Ok(Command::Unknown),
         }
@@ -249,7 +254,7 @@ impl GameEngine {
 
         let output = match cmd {
             Command::Help => {
-                "Available commands: help, quit, exit, rest, gather, status".to_string()
+                "Available commands: help, quit, exit, rest, gather, status, inventory".to_string()
             }
             Command::Rest => {
                 self.player.health = (self.player.health + 20).min(100);
@@ -329,6 +334,10 @@ impl GameEngine {
                     }
                     _ => "Couldn't gather unknown resource!".to_string(),
                 }
+            },
+            Command::Inventory => {
+                let player_inventory = &self.player.inventory;
+                format!("~ {} lb. of firewood\n~ {} L of water\n~ {} lb. of food", player_inventory.wood, player_inventory.water, player_inventory.food)
             }
             _ => "Unknown command!".to_string(),
         };
@@ -472,6 +481,20 @@ mod tests {
     }
 
     #[test]
+    fn test_engine_inventory_command_output() {
+        let mut engine = GameEngine::new();
+        let output = engine.process_command("inventory");
+        assert!(output.contains("L of water") && output.contains("lb. of firewood") && output.contains("lb. of food"));
+    }
+
+    #[test]
+    fn test_engine_inventory_command_shorthand() {
+        let mut engine = GameEngine::new();
+        let output = engine.process_command("inv");
+        assert!(output.contains("~"));
+    }
+
+    #[test]
     fn test_engine_death() {
         let mut engine = GameEngine::new();
         engine.player.health = 0;
@@ -506,7 +529,7 @@ mod tests {
         // Gather commands have variable costs, but always at least 1
         let mut engine2 = GameEngine::new();
         engine2.process_command("gather wood");
-        assert!(engine2.time.hour >= WAKE_UP_HOUR + 1 && engine2.time.hour <= WAKE_UP_HOUR + 3);
+        assert!(engine2.time.hour > WAKE_UP_HOUR && engine2.time.hour <= WAKE_UP_HOUR + 3);
 
         // Rest command jumps to next day WAKE_UP_HOUR
         engine2.process_command("rest");
