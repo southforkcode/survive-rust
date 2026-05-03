@@ -20,7 +20,7 @@ fn game_is_running(world: &mut GameWorld) {
 #[when(expr = "I type the command {string}")]
 fn type_command(world: &mut GameWorld, command: String) {
     if let Some(engine) = world.engine.as_mut() {
-        world.last_output = engine.process_command(&command);
+        world.last_output = engine.process_input(&command);
     }
 }
 
