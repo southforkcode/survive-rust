@@ -27,7 +27,7 @@ fn main() {
 
     while game.is_running() {
         let input = ui.read_command();
-        let output = game.process_command(&input);
+        let output = game.process_input(&input);
         ui.display_output(&output);
     }
 }

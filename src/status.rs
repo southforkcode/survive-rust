@@ -36,13 +36,13 @@ impl StatusProvider for CampStatusProvider {
         PROVIDER_CAMP
     }
     fn status(&self, engine: &GameEngine) -> String {
-        let wood = match engine.player.inventory.wood {
+        let wood = match engine.player.inventory.wood() {
             0 => "No firewood",
             1..=49 => "A little firewood",
             50..=150 => "Some firewood",
             _ => "Lots of firewood",
         };
-        let water = match engine.player.inventory.water {
+        let water = match engine.player.inventory.water() {
             0 => "No water",
             1..=49 => "A little water",
             50..=150 => "Some water",

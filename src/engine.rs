@@ -1,5 +1,6 @@
 use crate::status::StatusProvider;
-use rand::RngExt;
+use crate::commands::{Command, parse_input, handle_command};
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -41,11 +42,11 @@ impl Default for Player {
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Inventory {
     /// Amount of wood in pounds.
-    pub wood: u32, // lb
+    wood: u32, // lb
     /// Amount of water in liters.
-    pub water: u32, // liters
+    water: u32, // liters
     /// Amount of food in pounds.
-    pub food: u32, // lb
+    food: u32, // lb
 }
 
 impl Inventory {
@@ -57,74 +58,23 @@ impl Inventory {
             food: 0,
         }
     }
-}
-
-// Command variants
-/// Parsed command values accepted by the game engine.
-pub enum Command {
-    /// Displays the list of available commands.
-    Help,
-    /// Advances one turn and restores player health.
-    Rest,
-    /// Stops the game loop.
-    Quit,
-    /// Gathers the requested resource.
-    Gather(Resource),
-    /// Gets status of the environment, player, or camp.
-    Status(Option<String>),
-    /// Saves game state to optional file
-    Save(Option<String>),
-    /// Loads game state from file
-    Load(String),
-    // Outputs the player's current inventory 
-    Inventory,
-    /// Represents an unrecognized command.
-    Unknown,
-}
-
-impl FromStr for Command {
-    type Err = String;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut parts = s.split_whitespace();
-        let command: &str = parts.next().unwrap_or("");
-
-        match command {
-            "help" => Ok(Command::Help),
-            "rest" => Ok(Command::Rest),
-            "quit" | "exit" => Ok(Command::Quit),
-            "gather" => {
-                if let Some(arg) = parts.next() {
-                    Ok(Command::Gather(
-                        Resource::from_str(arg).ok().unwrap_or(Resource::Unknown),
-                    ))
-                } else {
-                    Ok(Command::Gather(Resource::Unknown))
-                }
-            }
-            "status" => {
-                if let Some(arg) = parts.next() {
-                    Ok(Command::Status(Some(arg.to_string())))
-                } else {
-                    Ok(Command::Status(None))
-                }
-            }
-            "save" => {
-                let arg = parts.next().map(|s| s.to_string());
-                Ok(Command::Save(arg))
-            }
-            "load" => {
-                if let Some(arg) = parts.next() {
-                    Ok(Command::Load(arg.to_string()))
-                } else {
-                    Ok(Command::Unknown)
-                }
-            },
-            "inventory" | "inv" => {
-                Ok(Command::Inventory)
-            }
-            _ => Ok(Command::Unknown),
-        }
+    pub fn wood(&self) -> u32 {
+        self.wood
+    }
+    pub fn water(&self) -> u32 {
+        self.water
+    }
+    pub fn food(&self) -> u32 {
+        self.food
+    }
+    pub fn set_wood(&mut self, val: u32) {
+        self.wood = val
+    }
+    pub fn set_water(&mut self, val: u32) {
+        self.water = val
+    }
+    pub fn set_food(&mut self, val: u32) {
+        self.food = val
     }
 }
 
@@ -234,9 +184,19 @@ impl GameEngine {
         serde_yaml::from_str(&yaml).map_err(|e| e.to_string())
     }
 
+    pub fn load_new_engine(&mut self, loaded_engine: GameEngine) {
+        self.is_running = loaded_engine.is_running();
+        self.time = loaded_engine.time;
+        self.player = loaded_engine.player;
+    }
+
     pub fn register_status_provider(&mut self, provider: Box<dyn StatusProvider>) {
         self.status_providers
             .insert(provider.name().to_string().to_lowercase(), provider);
+    }
+
+    pub fn status_providers(&self) -> &HashMap<String, Box<dyn StatusProvider>> {
+        &self.status_providers
     }
 
     /// Checks if the game is still running
@@ -244,118 +204,16 @@ impl GameEngine {
         self.is_running
     }
 
+    pub fn quit(&mut self) {
+        self.is_running = false
+    }
     /// Processes a single string command from the user and updates state.
     ///
     /// # Arguments
     /// * `command` - The text command from the terminal
-    pub fn process_command(&mut self, raw: &str) -> String {
-        let cmd: Command = Command::from_str(raw).ok().unwrap_or(Command::Unknown);
-        let mut time_cost = 0;
-
-        let output = match cmd {
-            Command::Help => {
-                "Available commands: help, quit, exit, rest, gather, status, inventory".to_string()
-            }
-            Command::Rest => {
-                self.player.health = (self.player.health + 20).min(100);
-                self.time.next_turn();
-                "You gained +20 health back.".to_string()
-            }
-            Command::Status(target) => {
-                time_cost = TIME_COST_STATUS;
-                match target {
-                    Some(name) => {
-                        if let Some(provider) = self.status_providers.get(&name.to_lowercase()) {
-                            provider.status(self)
-                        } else {
-                            "Cannot get status of unknown target.".to_string()
-                        }
-                    }
-                    None => {
-                        let mut statuses: Vec<String> = self
-                            .status_providers
-                            .values()
-                            .map(|p| p.status(self))
-                            .collect();
-                        statuses.sort(); // Optional: keeps output deterministic
-                        statuses.join("\n\n")
-                    }
-                }
-            }
-            Command::Quit => {
-                self.is_running = false;
-                "Exiting game...".to_string()
-            }
-            Command::Save(file_opt) => {
-                let file_name = file_opt.as_deref().unwrap_or("survive_game.yaml");
-                match self.save_to_file(file_name) {
-                    Ok(_) => format!("Game saved to {}", file_name),
-                    Err(e) => format!("Failed to save game: {}", e),
-                }
-            }
-            Command::Load(file_name) => match GameEngine::load_from_file(&file_name) {
-                Ok(loaded_engine) => {
-                    self.is_running = loaded_engine.is_running;
-                    self.time = loaded_engine.time;
-                    self.player = loaded_engine.player;
-                    format!("Game state restored from {}", file_name)
-                }
-                Err(e) => format!("Failed to load game: {}", e),
-            },
-            Command::Gather(resource) => {
-                let random_amount: u32 = 100;
-                match resource {
-                    Resource::Wood => {
-                        time_cost =
-                            rand::rng().random_range(GATHER_WOOD_COST_MIN..=GATHER_WOOD_COST_MAX);
-                        self.player.inventory.wood += random_amount;
-                        format!(
-                            "Gathered {} lbs. of wood! (Took {} hours)",
-                            random_amount, time_cost
-                        )
-                    }
-                    Resource::Water => {
-                        time_cost =
-                            rand::rng().random_range(GATHER_WATER_COST_MIN..=GATHER_WATER_COST_MAX);
-                        self.player.inventory.water += random_amount;
-                        format!(
-                            "Gathered {} liters of water! (Took {} hours)",
-                            random_amount, time_cost
-                        )
-                    }
-                    Resource::Food => {
-                        time_cost =
-                            rand::rng().random_range(GATHER_FOOD_COST_MIN..=GATHER_FOOD_COST_MAX);
-                        self.player.inventory.food += random_amount;
-                        format!(
-                            "Gathered {} lbs. of food! (Took {} hours)",
-                            random_amount, time_cost
-                        )
-                    }
-                    _ => "Couldn't gather unknown resource!".to_string(),
-                }
-            },
-            Command::Inventory => {
-                let player_inventory = &self.player.inventory;
-                format!("~ {} lb. of firewood\n~ {} L of water\n~ {} lb. of food", player_inventory.wood, player_inventory.water, player_inventory.food)
-            }
-            _ => "Unknown command!".to_string(),
-        };
-
-        if time_cost > 0 {
-            self.time.advance_time(time_cost);
-        }
-
-        if self.player.health <= 0 && self.is_running {
-            self.is_running = false;
-            return if output.is_empty() {
-                "You died.".to_string()
-            } else {
-                format!("{}\nYou died.", output)
-            };
-        }
-
-        output
+    pub fn process_input(&mut self, raw: &str) -> String {
+        let cmd: Command = parse_input(raw);
+        handle_command(cmd, self)
     }
 }
 
@@ -378,7 +236,7 @@ mod tests {
     #[test]
     fn test_engine_help_command() {
         let mut engine = GameEngine::new();
-        let output = engine.process_command("help");
+        let output = engine.process_input("help");
         assert!(output.contains("help"));
         assert!(engine.is_running());
     }
@@ -386,7 +244,7 @@ mod tests {
     #[test]
     fn test_engine_quit_command() {
         let mut engine = GameEngine::new();
-        let output = engine.process_command("quit");
+        let output = engine.process_input("quit");
         assert!(output.contains("Exiting"));
         assert!(!engine.is_running());
     }
@@ -395,7 +253,7 @@ mod tests {
     fn test_engine_rest_command() {
         let mut engine = GameEngine::new();
         engine.player.health = 50;
-        let output = engine.process_command("rest");
+        let output = engine.process_input("rest");
         assert_eq!(output, "You gained +20 health back.");
         assert_eq!(engine.player.health, 70);
         assert_eq!(engine.time.day_count, 2);
@@ -405,7 +263,7 @@ mod tests {
     fn test_engine_rest_health_cap() {
         let mut engine = GameEngine::new();
         engine.player.health = 90;
-        engine.process_command("rest");
+        engine.process_input("rest");
         assert_eq!(engine.player.health, 100);
     }
 
@@ -417,23 +275,23 @@ mod tests {
         engine.register_status_provider(Box::new(CampStatusProvider));
         engine.register_status_provider(Box::new(PlayerStatusProvider));
 
-        let output = engine.process_command("status");
+        let output = engine.process_input("status");
         assert!(output.contains("The sun is high in the sky."));
         assert!(output.contains("A sleeping spot"));
         assert!(output.contains("rested and healthy"));
 
-        let weather_output = engine.process_command("status weather");
+        let weather_output = engine.process_input("status weather");
         assert!(weather_output.contains("The sun is high in the sky."));
 
-        let camp_output = engine.process_command("status camp");
+        let camp_output = engine.process_input("status camp");
         assert!(camp_output.contains("A sleeping spot"));
 
-        engine.process_command("gather wood");
-        let item_output = engine.process_command("status camp");
+        engine.process_input("gather wood");
+        let item_output = engine.process_input("status camp");
         assert!(item_output.contains("Some firewood"));
 
         engine.player.health = 40;
-        let p_status = engine.process_command("status player");
+        let p_status = engine.process_input("status player");
         assert!(p_status.contains("weak and injured"));
     }
 
@@ -443,23 +301,23 @@ mod tests {
 
         for resource in ["wood", "water", "food"] {
             let command: String = "gather ".to_string() + resource;
-            let output = engine.process_command(&command);
+            let output = engine.process_input(&command);
             assert!(!output.contains("Couldn't"));
             match resource {
                 "wood" => {
-                    assert_eq!(engine.player.inventory.wood, 100);
-                    assert_eq!(engine.player.inventory.water, 0);
-                    assert_eq!(engine.player.inventory.food, 0)
+                    assert_eq!(engine.player.inventory.wood(), 100);
+                    assert_eq!(engine.player.inventory.water(), 0);
+                    assert_eq!(engine.player.inventory.food(), 0)
                 }
                 "water" => {
-                    assert_eq!(engine.player.inventory.wood, 100);
-                    assert_eq!(engine.player.inventory.water, 100);
-                    assert_eq!(engine.player.inventory.food, 0)
+                    assert_eq!(engine.player.inventory.wood(), 100);
+                    assert_eq!(engine.player.inventory.water(), 100);
+                    assert_eq!(engine.player.inventory.food(), 0)
                 }
                 "food" => {
-                    assert_eq!(engine.player.inventory.wood, 100);
-                    assert_eq!(engine.player.inventory.water, 100);
-                    assert_eq!(engine.player.inventory.food, 100)
+                    assert_eq!(engine.player.inventory.wood(), 100);
+                    assert_eq!(engine.player.inventory.water(), 100);
+                    assert_eq!(engine.player.inventory.food(), 100)
                 }
                 _ => {}
             }
@@ -472,25 +330,25 @@ mod tests {
         let invalid_inputs = ["", " ", "something"];
         for input in invalid_inputs {
             let command: String = "gather ".to_string() + input;
-            let output = engine.process_command(&command);
+            let output = engine.process_input(&command);
             assert!(output.contains("Couldn't gather unknown resource!"));
-            assert_eq!(engine.player.inventory.wood, 0);
-            assert_eq!(engine.player.inventory.water, 0);
-            assert_eq!(engine.player.inventory.food, 0);
+            assert_eq!(engine.player.inventory.wood(), 0);
+            assert_eq!(engine.player.inventory.water(), 0);
+            assert_eq!(engine.player.inventory.food(), 0);
         }
     }
 
     #[test]
     fn test_engine_inventory_command_output() {
         let mut engine = GameEngine::new();
-        let output = engine.process_command("inventory");
+        let output = engine.process_input("inventory");
         assert!(output.contains("L of water") && output.contains("lb. of firewood") && output.contains("lb. of food"));
     }
 
     #[test]
     fn test_engine_inventory_command_shorthand() {
         let mut engine = GameEngine::new();
-        let output = engine.process_command("inv");
+        let output = engine.process_input("inv");
         assert!(output.contains("~"));
     }
 
@@ -498,7 +356,7 @@ mod tests {
     fn test_engine_death() {
         let mut engine = GameEngine::new();
         engine.player.health = 0;
-        let output = engine.process_command("");
+        let output = engine.process_input("");
         assert!(output.contains("You died."));
         assert!(!engine.is_running());
     }
@@ -523,16 +381,16 @@ mod tests {
         let initial_hour = engine.time.hour;
 
         // Status command costs 1 hour
-        engine.process_command("status");
+        engine.process_input("status");
         assert_eq!(engine.time.hour, initial_hour + 1);
 
         // Gather commands have variable costs, but always at least 1
         let mut engine2 = GameEngine::new();
-        engine2.process_command("gather wood");
+        engine2.process_input("gather wood");
         assert!(engine2.time.hour > WAKE_UP_HOUR && engine2.time.hour <= WAKE_UP_HOUR + 3);
 
         // Rest command jumps to next day WAKE_UP_HOUR
-        engine2.process_command("rest");
+        engine2.process_input("rest");
         assert_eq!(engine2.time.day_count, 2);
         assert_eq!(engine2.time.hour, WAKE_UP_HOUR);
     }
@@ -540,7 +398,7 @@ mod tests {
     #[test]
     fn test_engine_save_load() {
         let mut engine = GameEngine::new();
-        engine.player.inventory.wood = 500;
+        engine.player.inventory.set_wood(500);
         let file_name = "test_engine_save.yaml";
         assert!(engine.save_to_file(file_name).is_ok());
 
