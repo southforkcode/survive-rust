@@ -1,7 +1,10 @@
 use crate::status::StatusProvider;
+use crate::events::{self, Event};
+use rand::prelude::*;
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::ops::Add;
 use std::str::FromStr;
 
 pub const WAKE_UP_HOUR: u32 = 7;
@@ -14,10 +17,11 @@ pub const GATHER_WATER_COST_MAX: u32 = 2;
 pub const GATHER_FOOD_COST_MIN: u32 = 1;
 pub const GATHER_FOOD_COST_MAX: u32 = 2;
 /// Represents the player's overall state and vitals
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub struct Player {
     /// The player's current health points. Player dies if this reaches 0 or below. Max is 100.
     pub health: i32,
+    pub luck: f32,
     pub inventory: Inventory,
 }
 
@@ -26,6 +30,7 @@ impl Player {
     pub fn new() -> Self {
         Self {
             health: 100,
+            luck: 1.0,
             inventory: Inventory::new(),
         }
     }
@@ -38,7 +43,7 @@ impl Default for Player {
 }
 
 /// Tracks all gatherable resources carried by the player.
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize, Clone, Copy)]
 pub struct Inventory {
     /// Amount of wood in pounds.
     pub wood: u32, // lb
@@ -55,6 +60,26 @@ impl Inventory {
             wood: 0,
             water: 0,
             food: 0,
+        }
+    }
+
+    pub fn get_resource_count(&self, resource: Resource) -> u32 {
+        match resource {
+            Resource::Food => {
+                self.food
+            }
+
+            Resource::Wood => {
+                self.wood
+            }
+
+            Resource::Water => {
+                self.water
+            }
+
+            Resource::Unknown => {
+                0
+            }
         }
     }
 }
@@ -130,7 +155,7 @@ impl FromStr for Command {
 
 // Resource variants
 /// Supported resource kinds for gather actions.
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Resource {
     /// Wood resource.
     Wood,
@@ -244,6 +269,11 @@ impl GameEngine {
         self.is_running
     }
 
+    // Execute game event
+    pub fn execute_event(&mut self, event: &Event) -> String {
+        event.execute(self)
+    }
+
     /// Processes a single string command from the user and updates state.
     ///
     /// # Arguments
@@ -302,24 +332,34 @@ impl GameEngine {
                 }
                 Err(e) => format!("Failed to load game: {}", e),
             },
+
             Command::Gather(resource) => {
+                let mut return_buffer: String = "".to_string();
+                let chance: f32 = 10.0; // Percentage
+                
+                if rand::rng().random::<f32>() >= (1.0 - (chance*self.player.luck/100.0)) {
+                    let event_output = self.execute_event(
+                        events::GATHER_EVENTS.choose(&mut rand::rng()).unwrap()
+                    );
+                    return_buffer = return_buffer.add(&event_output);
+                }
                 let random_amount: u32 = 100;
                 match resource {
                     Resource::Wood => {
                         time_cost =
                             rand::rng().random_range(GATHER_WOOD_COST_MIN..=GATHER_WOOD_COST_MAX);
                         self.player.inventory.wood += random_amount;
-                        format!(
-                            "Gathered {} lbs. of wood! (Took {} hours)",
+                        return_buffer += &format!(
+                            "\nGathered {} lbs. of wood! (Took {} hours)", 
                             random_amount, time_cost
-                        )
+                        );
                     }
                     Resource::Water => {
                         time_cost =
                             rand::rng().random_range(GATHER_WATER_COST_MIN..=GATHER_WATER_COST_MAX);
                         self.player.inventory.water += random_amount;
-                        format!(
-                            "Gathered {} liters of water! (Took {} hours)",
+                        return_buffer += &format!(
+                            "\nGathered {} liters of water! (Took {} hours)",
                             random_amount, time_cost
                         )
                     }
@@ -327,13 +367,15 @@ impl GameEngine {
                         time_cost =
                             rand::rng().random_range(GATHER_FOOD_COST_MIN..=GATHER_FOOD_COST_MAX);
                         self.player.inventory.food += random_amount;
-                        format!(
-                            "Gathered {} lbs. of food! (Took {} hours)",
+                        return_buffer += &format!(
+                            "\nGathered {} lbs. of food! (Took {} hours)",
                             random_amount, time_cost
                         )
                     }
-                    _ => "Couldn't gather unknown resource!".to_string(),
+                    _ => return_buffer += "\nCouldn't gather unknown resource!",
                 }
+
+                return_buffer
             },
             Command::Inventory => {
                 let player_inventory = &self.player.inventory;
@@ -440,6 +482,7 @@ mod tests {
     #[test]
     fn test_engine_gather_command_valid_resources() {
         let mut engine: GameEngine = GameEngine::new();
+        engine.player.luck = 0.0;
 
         for resource in ["wood", "water", "food"] {
             let command: String = "gather ".to_string() + resource;
